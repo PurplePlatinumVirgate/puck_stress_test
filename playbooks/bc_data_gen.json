@@ -1,0 +1,23 @@
+{
+  "name": "BC data generation: 12 bots, 1h",
+  "description": "Long run for behavioral-cloning dataset generation. 12 heuristic bots play for 1 hour, vote-start so play begins immediately. No scripted actions — pure heuristic behavior produces the (obs, action) corpus the BC trainer fits. Run multiple times sequentially to grow the corpus; one .bin per bot per run, ~135MB each.",
+  "schema_version": 1,
+  "duration_seconds": 3600,
+  "seed": 1,
+  "bot_count": 12,
+  "team_assignment": "alternate",
+  "vote_start": true,
+  "position_distribution": { "skater": 11, "goalie": 1 },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": true,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": true,
+    "pass_to_teammate": false,
+    "line_change": false
+  },
+  "scripted_actions": [],
+  "mod_specific": {}
+}

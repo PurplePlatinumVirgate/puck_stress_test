@@ -1,0 +1,22 @@
+{
+  "name": "Vanilla long (12 bots, 8 hour run)",
+  "description": "Long-running variant of vanilla_baseline for ad-hoc remote-server soak runs. 8-hour duration; kill earlier via 'taskkill /IM BotHost.exe /F'.",
+  "schema_version": 1,
+  "duration_seconds": 28800,
+  "seed": 42,
+  "bot_count": 12,
+  "team_assignment": "alternate",
+  "position_distribution": { "skater": 11, "goalie": 1 },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": true,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": true,
+    "pass_to_teammate": false,
+    "line_change": false
+  },
+  "scripted_actions": [],
+  "mod_specific": {}
+}

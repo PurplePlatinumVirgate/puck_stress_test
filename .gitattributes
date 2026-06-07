@@ -1,0 +1,21 @@
+# Normalize line endings: store text as LF in the repo, check out native.
+* text=auto
+
+# Scripts that are line-ending sensitive
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# Treat known binary types as binary (no EOL munging, no diff)
+*.dll  binary
+*.exe  binary
+*.pdb  binary
+*.onnx binary
+*.pt   binary
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary
+*.zip  binary
+*.bin  binary

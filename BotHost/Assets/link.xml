@@ -1,0 +1,19 @@
+<linker>
+  <!-- Preserve 0Harmony.dll and the System.Reflection.Emit types it
+       depends on. Without this, the IL linker strips Reflection.Emit
+       (Unity Standalone Mono ships it but doesn't keep it by default)
+       and Harmony's `CodeInstruction.labels` field references break.
+       Harmony itself we preserve so reflection-based patches work. -->
+  <assembly fullname="0Harmony" preserve="all"/>
+  <assembly fullname="Mono.Cecil" preserve="all"/>
+  <assembly fullname="MonoMod.Utils" preserve="all"/>
+  <assembly fullname="MonoMod.RuntimeDetour" preserve="all"/>
+  <assembly fullname="System.Reflection.Emit" preserve="all"/>
+  <assembly fullname="System.Reflection.Emit.ILGeneration" preserve="all"/>
+  <assembly fullname="System.Reflection.Emit.Lightweight" preserve="all"/>
+  <!-- mscorlib is where Reflection.Emit actually lives in Mono. Keep
+       the Emit namespace around. -->
+  <assembly fullname="mscorlib">
+    <type fullname="System.Reflection.Emit.*" preserve="all"/>
+  </assembly>
+</linker>

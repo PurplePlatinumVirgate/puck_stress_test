@@ -1,0 +1,79 @@
+# ──────────────────────────────────────────────────────────────────────────
+# puck_stress_test .gitignore
+#
+# This file is intentionally aggressive. The working directory contains tens of
+# GB of build output, run logs, ML artifacts, a private test-server install, and
+# proprietary game/engine DLLs that MUST NOT be published. Anything we want to
+# keep locally but not publish is ignored here; it stays on disk, untracked.
+# Review `git status --ignored` before the first commit.
+# ──────────────────────────────────────────────────────────────────────────
+
+# ── Out-of-scope: ML training pipeline (kept locally, not published) ──────────
+/ml/
+/RewardMod/
+/tools/
+requirements.txt
+/PLAN_ML.md
+/NEXT_STEPS_ML.md
+
+# ── Private server installs (copies of the proprietary Puck dedicated server) ─
+/testserver/
+/modcapture_server/
+
+# ── Dead prototype ───────────────────────────────────────────────────────────
+/spike_load/
+
+# ── Run artifacts / logs ─────────────────────────────────────────────────────
+/Logs/
+*.log
+*.err
+*.err.log
+**/telemetry/
+**/snapshots/
+
+# ── .NET build output ────────────────────────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# ── Unity (BotHost) ──────────────────────────────────────────────────────────
+/BotHost/Build/
+/BotHost/[Ll]ibrary/
+/BotHost/[Tt]emp/
+/BotHost/[Oo]bj/
+/BotHost/[Ll]ogs/
+/BotHost/[Mm]emoryCaptures/
+/BotHost/UserSettings/
+/BotHost/[Bb]uilds/
+# Unity auto-generates these at the BotHost root on open — noise. The mod
+# project files (BotAuthBypassMod/*.csproj etc.) are real source and stay tracked.
+/BotHost/*.csproj
+/BotHost/*.sln
+/BotHost/*.unityproj
+
+# ── Proprietary game/engine binaries — users supply their own (copy_dlls.ps1) ─
+# Keep the README + copy_dlls.ps1 under Assets/Plugins/Puck/, ignore the DLLs.
+/BotHost/Assets/Plugins/Puck/*.dll
+/BotHost/Assets/Plugins/Puck/*.dll.disabled
+/BotHost/Assets/Plugins/Puck/*.dll.meta
+/BotHost/Assets/Plugins/Microsoft.ML.OnnxRuntime.dll
+/BotHost/Assets/Plugins/Microsoft.ML.OnnxRuntime.dll.meta
+/BotHost/Assets/Plugins/x86_64/
+
+# ── ML artifacts elsewhere ───────────────────────────────────────────────────
+__pycache__/
+*.pt
+*.onnx
+/ml/checkpoints/
+/ml/data/
+
+# ── Local tool/editor config ─────────────────────────────────────────────────
+# Claude Code's local working dir — settings, permissions, lock files. All local.
+/.claude/
+
+# ── OS cruft ─────────────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>TelemetryMod</RootNamespace>
+    <AssemblyName>TelemetryMod</AssemblyName>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);CS1701;CS1702</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Path to your Puck install's managed-DLL directory
+         (…\Puck\Puck_Data\Managed). Set the PUCK_MANAGED environment variable,
+         or replace the fallback below with your own absolute path.
+         See BUILD.md. -->
+    <PuckManaged Condition="'$(PUCK_MANAGED)' != ''">$(PUCK_MANAGED)</PuckManaged>
+    <PuckManaged Condition="'$(PuckManaged)' == ''">C:\Path\To\SteamLibrary\steamapps\common\Puck\Puck_Data\Managed</PuckManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Puck">
+      <HintPath>$(PuckManaged)\Puck.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Netcode.Runtime">
+      <HintPath>$(PuckManaged)\Unity.Netcode.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(PuckManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(PuckManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.SharedInternalsModule">
+      <HintPath>$(PuckManaged)\UnityEngine.SharedInternalsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(PuckManaged)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

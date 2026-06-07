@@ -1,0 +1,82 @@
+PUCK STRESS TEST — common launch commands
+===========================================
+Run from PowerShell. Paths below use <REPO> as a placeholder for the directory
+you cloned this repo into (e.g. C:\path\to\puck_stress_test). Substitute your
+own. All paths are absolute so the current working directory doesn't matter.
+
+VARIABLES YOU TWEAK PER RUN
+---------------------------
+  --server        IP / hostname           (default: from playbook / 127.0.0.1)
+  --port          UDP gameplay port       (default: 30609 — Puck's game port)
+  --bots N        bot count               (default: from playbook)
+  --duration N    seconds                 (default: from playbook)
+  --seed N        run seed                (default: from playbook)
+  --playbook P    JSON path (absolute!)   playbook fills in any flag you omit;
+                                          explicit CLI flags always win.
+
+Mod IDs: NEVER hardcoded. Each bot connects empty; if the server kicks it
+with code 8 (MissingMods) the bot tears its NetworkManager down, rebuilds
+it, and reconnects advertising the IDs the server demanded. No playbook /
+code change is needed per server.
+
+Kill all bots:
+  Get-Process -Name BotHost -ErrorAction SilentlyContinue | Stop-Process -Force
+
+
+LOCAL TEST SERVER (127.0.0.1:30609)
+----------------------------------
+You supply your own Puck dedicated server — see SERVER_SETUP.md. Start it in a
+separate console (its plugins resolve relative to its cwd), then launch bots.
+
+# 30-second smoke (12 bots)
+& "<REPO>\BotHost\Build\BotHost\BotHost.exe" `
+    -batchmode -nographics `
+    --playbook "<REPO>\playbooks\smoke_12bots_30s.json" `
+    --server 127.0.0.1 --port 30609
+
+# 5-minute baseline (12 bots)
+& "<REPO>\BotHost\Build\BotHost\BotHost.exe" `
+    -batchmode -nographics `
+    --playbook "<REPO>\playbooks\vanilla_baseline.json" `
+    --server 127.0.0.1 --port 30609
+
+# Custom: 4 bots, 10 minutes (override playbook scalars from CLI)
+& "<REPO>\BotHost\Build\BotHost\BotHost.exe" `
+    -batchmode -nographics `
+    --playbook "<REPO>\playbooks\vanilla_baseline.json" `
+    --bots 4 --duration 600 `
+    --server 127.0.0.1 --port 30609
+
+
+REMOTE SERVER
+-------------
+Point --server / --port at any Puck server you operate. Bots auto-discover the
+required mod IDs from the server's first kick and reconnect on a fresh
+NetworkManager, so the same command works against vanilla or modded servers.
+
+# 2 bots, 8 hours
+& "<REPO>\BotHost\Build\BotHost\BotHost.exe" `
+    -batchmode -nographics `
+    --playbook "<REPO>\playbooks\vanilla_baseline.json" `
+    --bots 2 --duration 28800 `
+    --server <YOUR_SERVER_IP> --port <YOUR_PORT>
+
+# 1 bot quick reachability check (5 min)
+& "<REPO>\BotHost\Build\BotHost\BotHost.exe" `
+    -batchmode -nographics `
+    --playbook "<REPO>\playbooks\vanilla_baseline.json" `
+    --bots 1 --duration 300 `
+    --server <YOUR_SERVER_IP> --port <YOUR_PORT>
+
+
+GOTCHAS
+-------
+- --playbook must be an ABSOLUTE path. The launcher hands the same
+  string to its child processes; their cwd is BotHost\Build\BotHost\,
+  so a relative path resolves to nothing there and the child silently
+  falls back to a default 30-second playbook.
+- Don't rebuild BotHost while a run is live — the build overwrites
+  BotHost.dll under the running children and kills them.
+- Server-side telemetry CSVs land in <server-cwd>\telemetry\ (if TelemetryMod
+  is installed).
+- Per-child bot logs: BotHost\Build\BotHost\Logs\children\*.log.

@@ -1,0 +1,32 @@
+{
+  "port": 30609,
+  "pingPort": 30610,
+  "name": "Puck Bot Test Server",
+  "maxPlayers": 15,
+  "password": "",
+  "voip": false,
+  "isPublic": false,
+  "adminSteamIds": [],
+  "reloadBannedSteamIds": false,
+  "usePuckBannedSteamIds": false,
+  "printMetrics": true,
+  "kickTimeout": 86400,
+  "sleepTimeout": 86400,
+  "joinMidMatchDelay": 0,
+  "targetFrameRate": 360,
+  "serverTickRate": 360,
+  "clientTickRate": 360,
+  "startPaused": false,
+  "allowVoting": true,
+  "phaseDurationMap": {
+    "Warmup": 60,
+    "FaceOff": 3,
+    "Playing": 300,
+    "BlueScore": 5,
+    "RedScore": 5,
+    "Replay": 10,
+    "PeriodOver": 15,
+    "GameOver": 15
+  },
+  "mods": []
+}
