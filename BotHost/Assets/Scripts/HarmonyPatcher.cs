@@ -30,11 +30,20 @@ namespace PuckStressTest
         public static void Apply()
         {
             if (s_harmony != null) return;
+            // Diagnostic / Linux-Mono escape hatch: skip all Harmony patching.
+            // The bot's scene-placed re-injection (Patch_SynchronizeSceneNetworkObjects)
+            // is load-bearing, so with this set the bot won't spawn its Player —
+            // but it isolates whether Harmony's detours are what SIGSEGVs on Linux.
+            if (Environment.GetEnvironmentVariable("BOT_NO_HARMONY") == "1")
+            {
+                Debug.LogWarning("[HarmonyPatcher] SKIPPED (BOT_NO_HARMONY=1) — scene-sync patch OFF");
+                return;
+            }
             try
             {
                 s_harmony = new Harmony(Id);
                 s_harmony.PatchAll(Assembly.GetExecutingAssembly());
-                Debug.Log("[HarmonyPatcher] applied; SceneEventData log flag will be flipped on every new instance.");
+                Debug.Log("[HarmonyPatcher] applied.");
             }
             catch (Exception ex)
             {
@@ -43,60 +52,15 @@ namespace PuckStressTest
         }
     }
 
-    // Patches NGO's SceneEventData ctor to flip on
-    // EnableSerializationLogs. Accidentally load-bearing: although it
-    // was added as a one-shot diagnostic, removing it consistently
-    // breaks the bot's own-Player spawn. With the flag on, NGO's
-    // per-iteration debug builder logs context inside the SceneObject
-    // loop; the NRE that fires when spawnedNetworkObject is null
-    // (scene-placed objects we don't have) bubbles up to NGO's outer
-    // try/catch, which prints the builder and exits cleanly. Apparently
-    // exiting the loop EARLY (via the NRE) is more recoverable than
-    // letting it run to OverflowException at the next iteration. Until
-    // we mirror all 33 scene-placed objects (#19), keep this on.
-    //
-    // 2026-04-27 follow-up: tried replacing this with a postfix on
-    // CreateLocalNetworkObject that returns a placeholder NetworkObject
-    // for missing scene-placed hashes. NGO then takes the success path
-    // through SynchronizeNetworkBehaviours (which has its own catch+seek-
-    // clamp at NetworkObject.cs:3078-3081), but byte alignment still
-    // broke between iterations — next SceneObject deserialized to
-    // Hash=0 and the loop OverflowException'd. Suspect the catch's
-    // `reader.Seek(seekToEndOfSynchData)` clamps to Length when
-    // sizeOfSynchronizationData computed from the empty-children path
-    // ends up wrong. Reverted; staying with the NRE-based abort which
-    // at least lets the bot's own Player spawn via the post-handshake
-    // CreateObjectMessage. Real fix is task #19 (mirror scene-placed
-    // objects properly so NGO's success path runs with real children).
-    [HarmonyPatch]
-    internal static class Patch_SceneEventData_Ctor
-    {
-        private const string TypeName = "Unity.Netcode.SceneEventData";
-
-        [HarmonyTargetMethod]
-        private static MethodBase TargetMethod()
-        {
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                var t = asm.GetType(TypeName, throwOnError: false);
-                if (t == null) continue;
-                var ctors = t.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (ctors.Length > 0) return ctors[0];
-            }
-            Debug.LogError("[Patch_SceneEventData_Ctor] could not find Unity.Netcode.SceneEventData");
-            return null;
-        }
-
-        [HarmonyPostfix]
-        private static void Postfix(object __instance)
-        {
-            // B323 scene-sync misalignment root-caused (Puck moved
-            // sizeOfSyncData into SceneObject.SynchronizationDataSize)
-            // and patched in NetworkObject.cs. Serialization-logs no
-            // longer needed for normal runs. Re-enable here if a
-            // future drift breaks alignment again.
-        }
-    }
+    // NOTE (2026-06-10): the former Patch_SceneEventData_Ctor (a postfix on
+    // NGO's SceneEventData *constructor*) was REMOVED. Its body had already been
+    // emptied — the B323 scene-sync misalignment was root-caused and fixed in
+    // NetworkObject.cs, so the serialization-logs flag it used to flip is no
+    // longer needed. It was therefore a no-op detour on a constructor, and
+    // constructor detours are the most fragile Harmony operation on Mono — a
+    // prime suspect for the Linux-Mono SIGSEGV. Removing it drops the patch
+    // surface to just the load-bearing scene-placed re-injection below. If a
+    // future NGO drift breaks scene-sync alignment again, restore from git.
 
     // Re-inject our scene-placed stubs into NetworkSceneManager's
     // ScenePlacedObjects dict immediately before NGO walks the scene-

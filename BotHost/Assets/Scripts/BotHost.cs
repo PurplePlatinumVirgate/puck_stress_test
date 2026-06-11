@@ -35,6 +35,7 @@ namespace PuckStressTest
 
         private void Awake()
         {
+            Debug.Log("[BotHost] stage: Awake-enter");
             // Match the server's serverTickRate (360 from
             // testserver/server_configuration.json). NGO transport
             // polls receive once per Update via NetworkUpdateLoop;
@@ -56,10 +57,12 @@ namespace PuckStressTest
             // None of our mirrors simulate physics, but Unity still
             // schedules the FixedUpdate phase based on fixedDeltaTime.
             Time.fixedDeltaTime = 1f / 360f;
+            Debug.Log("[BotHost] stage: Awake-exit");
         }
 
         private void Start()
         {
+            Debug.Log("[BotHost] stage: Start-enter");
             if (Application.isBatchMode)
             {
                 Config = BotConfig.FromCommandLine();

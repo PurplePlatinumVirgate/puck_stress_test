@@ -39,11 +39,16 @@ namespace PuckStressTest
             // Apply Harmony patches BEFORE NetworkManager spawns; the
             // SceneEventData ctor postfix relies on running before any
             // NGO message-handling instances exist.
+            Debug.Log("[Bootstrap] stage: pre-harmony");
             HarmonyPatcher.Apply();
+            Debug.Log("[Bootstrap] stage: post-harmony");
 
             var go = new GameObject("BotHost");
+            Debug.Log("[Bootstrap] stage: GO-created");
             go.AddComponent<BotHost>();
+            Debug.Log("[Bootstrap] stage: component-added (Awake ran)");
             Object.DontDestroyOnLoad(go);
+            Debug.Log("[Bootstrap] stage: bootstrap-done");
         }
     }
 }

@@ -53,6 +53,11 @@ requirements.txt
 /BotHost/*.sln
 /BotHost/*.unityproj
 
+# ── Release staging — packaged platform builds for GitHub releases (local only) ─
+# Populated by local/package_release.ps1; artifacts are large binaries attached
+# to releases, never committed. The folder itself is local-only.
+/releases/
+
 # ── Proprietary game/engine binaries — users supply their own (copy_dlls.ps1) ─
 # Keep the README + copy_dlls.ps1 under Assets/Plugins/Puck/, ignore the DLLs.
 /BotHost/Assets/Plugins/Puck/*.dll
@@ -72,6 +77,10 @@ __pycache__/
 # ── Local tool/editor config ─────────────────────────────────────────────────
 # Claude Code's local working dir — settings, permissions, lock files. All local.
 /.claude/
+
+# ── Local, site-specific operational files: server notes, the stress
+#    orchestrator, run logs, and copied proprietary managed DLLs. Never published.
+/local/
 
 # ── OS cruft ─────────────────────────────────────────────────────────────────
 Thumbs.db
