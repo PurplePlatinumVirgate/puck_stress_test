@@ -393,15 +393,25 @@ namespace PuckStressTest
             try
             {
                 var obj = JObject.Parse(disconnectReason);
-                int code = obj.Value<int?>("code") ?? -1;
-                // ConnectionRejectionCode.MissingMods = 8
-                if (code != 8) return null;
-                var arr = obj["clientRequiredModIds"] as JArray;
+                // The missing-mods kick carries the list of mod ids the server
+                // demands. Its exact shape varies by Puck build:
+                //   - older: { "code": 8, "clientRequiredModIds": [ ... ] }
+                //   - B897 : { "code": 7, "data": { "clientRequiredModIds": [ ... ] } }
+                // Don't gate on the numeric code (MissingMods has been both 7 and
+                // 8 across builds) — the presence of the id list is the
+                // unambiguous "advertise these and retry" signal. Look for it at
+                // the top level OR nested under "data".
+                var arr = (obj["clientRequiredModIds"]
+                           ?? obj["data"]?["clientRequiredModIds"]) as JArray;
                 if (arr == null) return null;
                 var list = new List<ulong>(arr.Count);
                 foreach (var t in arr)
                 {
+                    // B897 serialises the ids as JSON strings ("3724352946");
+                    // older builds used integers. Accept both.
                     if (t.Type == JTokenType.Integer) list.Add(t.Value<ulong>());
+                    else if (t.Type == JTokenType.String
+                             && ulong.TryParse(t.Value<string>(), out var v)) list.Add(v);
                 }
                 return list.ToArray();
             }

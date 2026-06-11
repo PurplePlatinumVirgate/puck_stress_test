@@ -157,15 +157,32 @@ namespace BotAuthBypassMod
                 if (!Plugin.IsBotSteamId(steamId)) return true;  // real user — original handles backend auth
 
                 // Run the same pre-flight checks the original does
-                // (server-full, banned, password, missing mods). If any
-                // fail, reject and skip the original.
+                // (server-full, banned, password, missing mods), but with one
+                // exception for bots: IGNORE the missing-mods rejection.
+                //
+                // Bots are headless stubs. They never carry the server's
+                // client-required workshop mods and don't need them (they
+                // render nothing). If we enforced the mod check, the bot would
+                // be kicked, then reconnect on a rebuilt NetworkManager — and
+                // that rebuild loses prefab-spawn capability, so the server's
+                // Player/Puck spawns fail and the bot never gets a body to
+                // claim a position with. Letting mod-less bots through on the
+                // FIRST connect keeps them on the healthy NetworkManager#0
+                // where scene-sync and spawns work. Genuine rejections
+                // (server full, banned, bad password) are still honoured.
+                //
+                // Compare against the enum MEMBER (not a literal) so this stays
+                // correct across Puck builds where MissingMods's numeric value
+                // differs (7 on B897, 8 on older builds).
                 ConnectionRejectionCode? code = __instance.GetConnectionRejectionCode(connectionApproval);
-                if (code.HasValue)
+                if (code.HasValue && code.Value != ConnectionRejectionCode.MissingMods)
                 {
                     __instance.RejectConnection(clientId, code.Value);
                     Plugin.Log($"Bot client {clientId} steamId={steamId} rejected pre-flight: {code.Value}");
                     return false;
                 }
+                if (code.HasValue)
+                    Plugin.Log($"Bot client {clientId} steamId={steamId} missing mods ({code.Value}) — ignored for bot.");
 
                 // Halt the NGO approval pipeline so we control the
                 // resolution (the original also Halts before emitting
