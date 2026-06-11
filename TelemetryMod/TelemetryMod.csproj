@@ -44,6 +44,11 @@
       <HintPath>$(PuckManaged)\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- ProfilerRecorder / ProfilerCategory (Module C). -->
+    <Reference Include="Unity.Profiling.Core">
+      <HintPath>$(PuckManaged)\Unity.Profiling.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

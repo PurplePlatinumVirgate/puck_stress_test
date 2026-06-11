@@ -56,6 +56,39 @@ namespace TelemetryMod
 
         private static readonly Harmony s_harmony = new Harmony(Guid);
 
+        // --- Attribution profiling (Modules A-D), off by default. Enabled per
+        //     env var for a dedicated "full" pass; lightweight metrics above are
+        //     untouched. See FunctionProfiler/ThreadSampler/Counters.cs. ---
+        internal static bool s_profFunctions, s_profThreads, s_profCounters, s_profBigAlloc, s_profStatic, s_profAutoplugins, s_profPatched;
+        internal static int  s_profCap, s_windowMs, s_discoverDelay;
+        internal static long s_bigAllocBytes;
+        private static StreamWriter s_funcWriter, s_threadWriter, s_counterWriter, s_bigAllocWriter;
+
+        private static bool EnvBool(string name, bool dflt)
+        {
+            try
+            {
+                var v = Environment.GetEnvironmentVariable(name);
+                if (string.IsNullOrEmpty(v)) return dflt;
+                v = v.Trim();
+                return v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase)
+                                || v.Equals("yes",  StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return dflt; }
+        }
+
+        private static int EnvInt(string name, int dflt, int min, int max)
+        {
+            try
+            {
+                var v = Environment.GetEnvironmentVariable(name);
+                if (!string.IsNullOrEmpty(v) && int.TryParse(v.Trim(), out var r))
+                    return Math.Max(min, Math.Min(max, r));
+            }
+            catch { }
+            return dflt;
+        }
+
         public bool OnEnable()
         {
             try
@@ -186,6 +219,8 @@ namespace TelemetryMod
             s_stopwatch = Stopwatch.StartNew();
             s_tickIdx = 0;
 
+            StartProfiling(outDir, ts);
+
             s_host = new GameObject($"{Name}_Host");
             UnityEngine.Object.DontDestroyOnLoad(s_host);
             var driver = s_host.AddComponent<TelemetryDriver>();
@@ -194,10 +229,115 @@ namespace TelemetryMod
             Log($"writing -> {metricsPath}");
         }
 
+        // Reads TELEMETRY_PROFILE_* env vars and, if any module is requested,
+        // opens its CSV and starts it. All optional; default = lightweight.
+        private static void StartProfiling(string outDir, string ts)
+        {
+            s_profFunctions = EnvBool("TELEMETRY_PROFILE_FUNCTIONS", false);
+            s_profThreads   = EnvBool("TELEMETRY_PROFILE_THREADS",   false);
+            s_profCounters  = EnvBool("TELEMETRY_PROFILE_COUNTERS",  false);
+            s_profStatic    = EnvBool("TELEMETRY_PROFILE_STATIC",    true);
+            // @autoplugins (mod's own methods) is safe → default ON. The broad
+            // GetAllPatchedMethods re-wrap native-crashed the server at the
+            // post-goal puck respawn → default OFF, opt-in only. The legacy
+            // TELEMETRY_PROFILE_DYNAMIC=0 master-disables both.
+            bool dynMaster  = EnvBool("TELEMETRY_PROFILE_DYNAMIC", true);
+            s_profAutoplugins = dynMaster && EnvBool("TELEMETRY_PROFILE_AUTOPLUGINS", true);
+            s_profPatched     = dynMaster && EnvBool("TELEMETRY_PROFILE_PATCHED",    false);
+            s_profBigAlloc  = EnvBool("TELEMETRY_PROFILE_BIGALLOC",  true);
+            s_profCap       = EnvInt ("TELEMETRY_PROFILE_CAP", 400, 1, 4000);
+            s_windowMs      = EnvInt ("TELEMETRY_PROFILE_WINDOW_MS", 1000, 100, 60000);
+            // Defer dynamic discovery until mod-loading has fully settled, so we
+            // patch LAST. Patching while other mods are still running their own
+            // OnEnable PatchAll() collides (a re-patch recompiles the shared
+            // method) and can fail their enable; patching after means any
+            // collision lands in OUR try/catch (skip the method) instead.
+            s_discoverDelay = EnvInt ("TELEMETRY_PROFILE_DISCOVER_DELAY_S", 45, 5, 600);
+            s_bigAllocBytes = EnvInt ("TELEMETRY_PROFILE_BIGALLOC_BYTES", 262144, 4096, int.MaxValue);
+
+            string[] excludes = null;
+            try
+            {
+                var ex = Environment.GetEnvironmentVariable("TELEMETRY_PROFILE_EXCLUDE");
+                if (!string.IsNullOrEmpty(ex)) excludes = ex.Split(',');
+            }
+            catch { }
+
+            s_summaryWriter?.WriteLine($"profile_functions={(s_profFunctions ? 1 : 0)}");
+            s_summaryWriter?.WriteLine($"profile_threads={(s_profThreads ? 1 : 0)}");
+            s_summaryWriter?.WriteLine($"profile_counters={(s_profCounters ? 1 : 0)}");
+            s_summaryWriter?.WriteLine($"profile_window_ms={s_windowMs}");
+
+            if (s_profFunctions)
+            {
+                s_funcWriter = new StreamWriter(Path.Combine(outDir, $"{ts}_functions.csv"), false, Encoding.ASCII) { AutoFlush = false };
+                s_funcWriter.WriteLine("t_ms,window_ms,method,owner,mode,calls,total_us,mean_us,p95_us,p99_us,max_us");
+                if (s_profBigAlloc)
+                {
+                    s_bigAllocWriter = new StreamWriter(Path.Combine(outDir, $"{ts}_bigallocs.csv"), false, Encoding.ASCII) { AutoFlush = false };
+                    s_bigAllocWriter.WriteLine("t_ms,frame,method,owner,bytes,call_us");
+                }
+                FunctionProfiler.Init(s_profStatic, s_profAutoplugins, s_profPatched, s_profBigAlloc, s_bigAllocBytes, s_profCap, excludes);
+                s_summaryWriter?.WriteLine($"alloc_mode={FunctionProfiler.AllocModeString}");
+                s_summaryWriter?.WriteLine($"functions_selected_static={FunctionProfiler.StaticCount}");
+                s_summaryWriter?.WriteLine($"profile_autoplugins={(s_profAutoplugins ? 1 : 0)} profile_patched={(s_profPatched ? 1 : 0)}");
+            }
+            if (s_profThreads)
+            {
+                s_threadWriter = new StreamWriter(Path.Combine(outDir, $"{ts}_threads.csv"), false, Encoding.ASCII) { AutoFlush = false };
+                s_threadWriter.WriteLine("t_ms,window_ms,os_thread_id,thread_name,is_main,cpu_us,user_us,sys_us");
+                ThreadSampler.Init();
+                s_summaryWriter?.WriteLine($"main_os_thread_id={ThreadSampler.MainOsThreadId}");
+            }
+            if (s_profCounters)
+            {
+                s_counterWriter = new StreamWriter(Path.Combine(outDir, $"{ts}_counters.csv"), false, Encoding.ASCII) { AutoFlush = false };
+                s_counterWriter.WriteLine("t_ms,window_ms,counter,total,avg,p95,p99,max");
+                Counters.Init();
+            }
+            s_summaryWriter?.Flush();
+        }
+
+        // Called every TELEMETRY_PROFILE_WINDOW_MS by the driver (main thread).
+        internal static void FlushWindow()
+        {
+            if (s_stopwatch == null) return;
+            long t = s_stopwatch.ElapsedMilliseconds;
+            try { if (s_profFunctions) FunctionProfiler.FlushWindow(s_funcWriter, s_bigAllocWriter, t, s_windowMs); }
+            catch (Exception ex) { LogError("function flush failed: " + ex.Message); }
+            try { if (s_profThreads) ThreadSampler.FlushWindow(s_threadWriter, t, s_windowMs); }
+            catch (Exception ex) { LogError("thread flush failed: " + ex.Message); }
+            try { if (s_profCounters) Counters.FlushWindow(s_counterWriter, t, s_windowMs); }
+            catch (Exception ex) { LogError("counter flush failed: " + ex.Message); }
+        }
+
+        internal static void OnDeferredDiscovery()
+        {
+            try
+            {
+                if (s_profFunctions)
+                {
+                    FunctionProfiler.RunDynamicDiscovery();
+                    s_summaryWriter?.WriteLine($"functions_selected_dynamic={FunctionProfiler.DynamicCount}");
+                    s_summaryWriter?.Flush();
+                }
+            }
+            catch (Exception ex) { LogError("deferred discovery failed: " + ex.Message); }
+        }
+
         private static void EndRun()
         {
             try
             {
+                // Final window flush + stop modules before closing their files.
+                try { FlushWindow(); } catch { }
+                if (s_profFunctions) { try { FunctionProfiler.Stop(); } catch { } }
+                if (s_profThreads)   { try { ThreadSampler.Stop(); }   catch { } }
+                if (s_profCounters)  { try { Counters.Stop(); }        catch { } }
+                foreach (var w in new[] { s_funcWriter, s_threadWriter, s_counterWriter, s_bigAllocWriter })
+                    { try { w?.Flush(); w?.Dispose(); } catch { } }
+                s_funcWriter = s_threadWriter = s_counterWriter = s_bigAllocWriter = null;
+
                 if (s_summaryWriter != null)
                 {
                     s_summaryWriter.WriteLine($"end_utc={DateTime.UtcNow:o}");
@@ -287,6 +427,7 @@ namespace TelemetryMod
 
     internal class TelemetryDriver : MonoBehaviour
     {
+        // Lightweight metrics sampler (unchanged): 20 Hz coroutine.
         public IEnumerator SampleLoop()
         {
             var wait = new WaitForSecondsRealtime(0.05f);
@@ -294,6 +435,44 @@ namespace TelemetryMod
             {
                 Plugin.Sample();
                 yield return wait;
+            }
+        }
+
+        // Profiling pump (only active when a TELEMETRY_PROFILE_* module is on):
+        // per-frame counter sampling, a one-shot deferred discovery ~10s in
+        // (after the system-under-test has applied its own patches), and a
+        // per-window CSV flush. All a no-op when profiling is disabled.
+        private bool  _profiling;
+        private bool  _discovered;
+        private float _discoverAt;
+        private float _nextWindowAt;
+        private float _windowSec;
+
+        private void Awake()
+        {
+            _profiling = Plugin.s_profFunctions || Plugin.s_profThreads || Plugin.s_profCounters;
+            _windowSec = Plugin.s_windowMs / 1000f;
+            _discoverAt   = Time.unscaledTime + Plugin.s_discoverDelay;
+            _nextWindowAt = Time.unscaledTime + _windowSec;
+            _discovered = !Plugin.s_profFunctions; // nothing to discover otherwise
+        }
+
+        private void LateUpdate()
+        {
+            if (!_profiling) return;
+
+            if (Counters.Enabled) { try { Counters.SampleFrame(); } catch { } }
+
+            if (!_discovered && Time.unscaledTime >= _discoverAt)
+            {
+                _discovered = true;
+                Plugin.OnDeferredDiscovery();
+            }
+
+            if (Time.unscaledTime >= _nextWindowAt)
+            {
+                _nextWindowAt = Time.unscaledTime + _windowSec;
+                Plugin.FlushWindow();
             }
         }
     }
