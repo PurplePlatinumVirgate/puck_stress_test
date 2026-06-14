@@ -26,7 +26,14 @@ namespace TelemetryMod
     //   gc_gen0        cumulative GC count for gen 0
     //   gc_gen1        cumulative GC count for gen 1
     //   gc_gen2        cumulative GC count for gen 2
-    //   total_alloc_b  GC.GetTotalMemory snapshot (bytes)
+    //   total_alloc_b  GC.GetTotalMemory snapshot (bytes) — MANAGED heap only
+    //   proc_rss_b     process resident memory (bytes) — the real OS RAM
+    //   proc_cpu_s     cumulative process CPU seconds (utime+stime)
+    //   proc_threads   OS thread count
+    //   sys_cpu_busy_s,sys_cpu_total_s  whole-host CPU jiffies->seconds (cumulative)
+    //   sys_mem_used_b,sys_mem_total_b  whole-host RAM used / total (bytes)
+    //   sys_load1      whole-host 1-minute load average
+    //   (sys_* empty on non-Linux; host stats include the colocated bots + OS)
     //
     // Two artifacts per run:
     //   telemetry/<timestamp>_metrics.csv   (the per-tick rows)
@@ -202,7 +209,9 @@ namespace TelemetryMod
             s_metricsWriter = new StreamWriter(metricsPath, append: false, Encoding.ASCII)
                 { AutoFlush = false };
             s_metricsWriter.WriteLine(
-                "t_ms,frame_ms,tick_idx,connected,game_phase,gc_gen0,gc_gen1,gc_gen2,total_alloc_b");
+                "t_ms,frame_ms,tick_idx,connected,game_phase,gc_gen0,gc_gen1,gc_gen2,total_alloc_b," +
+                "proc_rss_b,proc_cpu_s,proc_threads," +
+                "sys_cpu_busy_s,sys_cpu_total_s,sys_mem_used_b,sys_mem_total_b,sys_load1");
 
             s_eventsWriter = new StreamWriter(eventsPath, append: false, Encoding.ASCII)
                 { AutoFlush = false };
@@ -441,7 +450,28 @@ namespace TelemetryMod
                 s_metricsWriter.Write(g0);   s_metricsWriter.Write(',');
                 s_metricsWriter.Write(g1);   s_metricsWriter.Write(',');
                 s_metricsWriter.Write(g2);   s_metricsWriter.Write(',');
-                s_metricsWriter.Write(totalAlloc);
+                s_metricsWriter.Write(totalAlloc); s_metricsWriter.Write(',');
+                // Process-level RAM/CPU/threads (true OS footprint, not just the
+                // managed heap above). Cheap /proc read on Linux.
+                var ps = ProcStat.Read();
+                s_metricsWriter.Write(ps.RssBytes); s_metricsWriter.Write(',');
+                s_metricsWriter.Write(ps.CpuSeconds.ToString("F3")); s_metricsWriter.Write(',');
+                s_metricsWriter.Write(ps.Threads); s_metricsWriter.Write(',');
+                // Whole-host usage (Puck + colocated bots + OS). Empty when /proc
+                // is unavailable (non-Linux) -> NaN downstream.
+                var ss = SysStat.Read();
+                if (ss.Available)
+                {
+                    s_metricsWriter.Write(ss.CpuBusySeconds.ToString("F2")); s_metricsWriter.Write(',');
+                    s_metricsWriter.Write(ss.CpuTotalSeconds.ToString("F2")); s_metricsWriter.Write(',');
+                    s_metricsWriter.Write(ss.MemUsedBytes); s_metricsWriter.Write(',');
+                    s_metricsWriter.Write(ss.MemTotalBytes); s_metricsWriter.Write(',');
+                    s_metricsWriter.Write(ss.Load1.ToString("F2"));
+                }
+                else
+                {
+                    s_metricsWriter.Write(",,,,");   // five empty sys_* fields
+                }
                 s_metricsWriter.WriteLine();
 
                 // Flush every ~1s of samples so a crashed run still has
