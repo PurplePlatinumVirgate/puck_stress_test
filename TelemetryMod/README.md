@@ -23,6 +23,31 @@ named `<utc-timestamp>_<kind>` are written.
 Rows are flushed every ~1 second of samples, so a crashed run still
 preserves most data.
 
+> **Length-bias caveat:** the 20 Hz sampler lands on a frame with
+> probability proportional to its duration, so `frame_ms` tail
+> percentiles computed from these rows are time-weighted (inflated).
+> Use `*_frames.csv` below for exact per-frame percentiles; the metrics
+> rows remain the source for heap/GC/connected/phase.
+
+### `*_frames.csv` — exact per-frame histogram (always on, 1 s windows)
+
+One row per (window, game phase with frames). Every frame is counted —
+no sampling, no length bias.
+
+| column | meaning |
+|---|---|
+| `t_ms` | wall-clock ms at flush |
+| `window_ms` | nominal window length (default 1000) |
+| `game_phase` | phase the frames were attributed to (`?` = pre-init) |
+| `connected_min`, `connected_max` | client-count range during the window |
+| `count`, `sum_us`, `max_us` | frame count / total time / worst frame |
+| `u500`, `u530`, ... `uinf` | log-binned counts; column name = upper bin edge in µs (12 bins/octave from 0.5 ms; `u500` = underflow, `uinf` = overflow ≥ 2048 ms) |
+
+Frame durations come from `Stopwatch.GetTimestamp()` deltas, not
+`Time.deltaTime`, so `max_us` is not clamped by `Time.maximumDeltaTime`
+and can exceed the metrics `frame_ms` on big hitches. Bin edges are
+self-describing via the header — parsers should read them from there.
+
 ### `*_events.csv` — per-event lifecycle (Harmony hooks)
 
 | column | meaning |

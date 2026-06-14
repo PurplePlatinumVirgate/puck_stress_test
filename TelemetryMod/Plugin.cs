@@ -50,6 +50,7 @@ namespace TelemetryMod
         private static StreamWriter s_metricsWriter;
         private static StreamWriter s_summaryWriter;
         internal static StreamWriter s_eventsWriter;
+        private static StreamWriter s_framesWriter;
         private static GameObject   s_host;
         internal static Stopwatch   s_stopwatch;
         private static long         s_tickIdx;
@@ -196,6 +197,7 @@ namespace TelemetryMod
             string metricsPath = Path.Combine(outDir, $"{ts}_metrics.csv");
             string summaryPath = Path.Combine(outDir, $"{ts}_summary.txt");
             string eventsPath  = Path.Combine(outDir, $"{ts}_events.csv");
+            string framesPath  = Path.Combine(outDir, $"{ts}_frames.csv");
 
             s_metricsWriter = new StreamWriter(metricsPath, append: false, Encoding.ASCII)
                 { AutoFlush = false };
@@ -206,6 +208,17 @@ namespace TelemetryMod
                 { AutoFlush = false };
             s_eventsWriter.WriteLine("t_ms,event,client_id,detail");
 
+            // Always-on per-frame histogram (exact frame-time percentiles;
+            // the 20 Hz metrics rows above are length-biased for tails).
+            FrameHistogram.Init();
+            s_framesWriter = new StreamWriter(framesPath, append: false, Encoding.ASCII)
+                { AutoFlush = false };
+            s_framesWriter.WriteLine(FrameHistogram.HeaderLine);
+
+            // Runtime mod attestation — proves which mods/plugins actually
+            // loaded (Steam silently ignores failed workshop downloads).
+            ModAttestation.Init(outDir, ts, s_stopwatch);
+
             s_summaryWriter = new StreamWriter(summaryPath, append: false, Encoding.ASCII)
                 { AutoFlush = true };
             s_summaryWriter.WriteLine($"# {Name} run summary");
@@ -215,6 +228,14 @@ namespace TelemetryMod
             s_summaryWriter.WriteLine($"unity_version={Application.unityVersion}");
             s_summaryWriter.WriteLine($"target_frame_rate={Application.targetFrameRate}");
             s_summaryWriter.WriteLine($"is_batch_mode={Application.isBatchMode}");
+            // frames.csv provenance/debug (the analysis parses edges from the
+            // CSV header, not from these). Note: frames max_us uses Stopwatch
+            // deltas and can exceed metrics frame_ms on big hitches (deltaTime
+            // is clamped by Time.maximumDeltaTime).
+            s_summaryWriter.WriteLine("frames_schema=v1");
+            s_summaryWriter.WriteLine($"frames_bins={FrameHistogram.NumBins}");
+            s_summaryWriter.WriteLine($"frames_bin_min_us={FrameHistogram.MinUs}");
+            s_summaryWriter.WriteLine($"frames_bins_per_octave={FrameHistogram.BinsPerOctave}");
 
             s_stopwatch = Stopwatch.StartNew();
             s_tickIdx = 0;
@@ -299,10 +320,15 @@ namespace TelemetryMod
         }
 
         // Called every TELEMETRY_PROFILE_WINDOW_MS by the driver (main thread).
+        // The frames flush is unconditional (always-on histogram); the
+        // profiling flushes stay gated per module.
         internal static void FlushWindow()
         {
             if (s_stopwatch == null) return;
             long t = s_stopwatch.ElapsedMilliseconds;
+            try { FrameHistogram.FlushWindow(s_framesWriter, t, s_windowMs); }
+            catch (Exception ex) { LogError("frames flush failed: " + ex.Message); }
+            try { ModAttestation.MaybeWrite(t); } catch { }
             try { if (s_profFunctions) FunctionProfiler.FlushWindow(s_funcWriter, s_bigAllocWriter, t, s_windowMs); }
             catch (Exception ex) { LogError("function flush failed: " + ex.Message); }
             try { if (s_profThreads) ThreadSampler.FlushWindow(s_threadWriter, t, s_windowMs); }
@@ -331,6 +357,13 @@ namespace TelemetryMod
             {
                 // Final window flush + stop modules before closing their files.
                 try { FlushWindow(); } catch { }
+                try { ModAttestation.Stop(); } catch { }
+                try { FrameHistogram.Stop(); } catch { }
+                if (s_framesWriter != null)
+                {
+                    try { s_framesWriter.Flush(); s_framesWriter.Dispose(); } catch { }
+                    s_framesWriter = null;
+                }
                 if (s_profFunctions) { try { FunctionProfiler.Stop(); } catch { } }
                 if (s_profThreads)   { try { ThreadSampler.Stop(); }   catch { } }
                 if (s_profCounters)  { try { Counters.Stop(); }        catch { } }
@@ -438,10 +471,10 @@ namespace TelemetryMod
             }
         }
 
-        // Profiling pump (only active when a TELEMETRY_PROFILE_* module is on):
-        // per-frame counter sampling, a one-shot deferred discovery ~10s in
-        // (after the system-under-test has applied its own patches), and a
-        // per-window CSV flush. All a no-op when profiling is disabled.
+        // Per-frame pump. The frame-time histogram and the per-window flush
+        // are ALWAYS on (the frames.csv writer is unconditional); counter
+        // sampling and deferred Harmony discovery stay gated behind the
+        // TELEMETRY_PROFILE_* modules.
         private bool  _profiling;
         private bool  _discovered;
         private float _discoverAt;
@@ -459,14 +492,17 @@ namespace TelemetryMod
 
         private void LateUpdate()
         {
-            if (!_profiling) return;
+            try { FrameHistogram.SampleFrame(); } catch { }
 
-            if (Counters.Enabled) { try { Counters.SampleFrame(); } catch { } }
-
-            if (!_discovered && Time.unscaledTime >= _discoverAt)
+            if (_profiling)
             {
-                _discovered = true;
-                Plugin.OnDeferredDiscovery();
+                if (Counters.Enabled) { try { Counters.SampleFrame(); } catch { } }
+
+                if (!_discovered && Time.unscaledTime >= _discoverAt)
+                {
+                    _discovered = true;
+                    Plugin.OnDeferredDiscovery();
+                }
             }
 
             if (Time.unscaledTime >= _nextWindowAt)
