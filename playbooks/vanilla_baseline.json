@@ -1,20 +1,23 @@
 {
-  "name": "Vanilla baseline (12 bots, 5 minute run)",
-  "description": "Reference run for any non-vanilla comparison. All baseline behaviors on. No scripted actions, no mod-specific payloads. 12 skaters alternating teams, 5-minute duration, fixed seed for reproducibility.",
+  "name": "Vanilla baseline (12 bots)",
+  "description": "Reference run for any non-vanilla comparison. All baseline behaviors on. No scripted actions, no mod-specific payloads. 12 bots, 5 skaters + 1 goalie per team on alternating teams, fixed seed for reproducibility. Run length is set per-job by phase_seconds (default 1h), not by this playbook; the duration_seconds below is only a fallback for running BotHost standalone without --duration.",
   "schema_version": 1,
   "duration_seconds": 300,
   "seed": 42,
   "bot_count": 12,
   "team_assignment": "alternate",
-  "position_distribution": { "skater": 11, "goalie": 1 },
+  "position_distribution": {
+    "skater": 10,
+    "goalie": 2
+  },
   "behavior": {
     "skate_to_puck": true,
     "rotate_stick_to_puck": true,
     "rotate_head_to_puck": true,
-    "attempt_poke": true,
+    "attempt_poke": false,
     "push_to_opposing_goal": true,
-    "respect_faceoff": true,
-    "pass_to_teammate": false,
+    "respect_faceoff": false,
+    "pass_to_teammate": true,
     "line_change": false
   },
   "scripted_actions": [],

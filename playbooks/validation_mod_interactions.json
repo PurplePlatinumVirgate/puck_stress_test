@@ -1,0 +1,97 @@
+{
+  "name": "Validation: mod interactions + scripted actions",
+  "description": "Local smoke for the new BotHost features: carve bursts, PPKB dashfall actions, curved-stick config, and real scripted-action sends (chat/command/quick_chat/team_change/position_change). 4 bots, short run.",
+  "schema_version": 1,
+  "duration_seconds": 300.0,
+  "seed": 7,
+  "bot_count": 4,
+  "vote_start": true,
+  "team_assignment": "alternate",
+  "position_distribution": {
+    "skater": 4,
+    "goalie": 0
+  },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": false,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": false,
+    "pass_to_teammate": true,
+    "line_change": false,
+    "comp_carve": true,
+    "comp_dashfall": true
+  },
+  "scripted_actions": [
+    {
+      "at_seconds": 60.0,
+      "bot_indices": [
+        0
+      ],
+      "action": "chat",
+      "args": {
+        "text": "validation chat line"
+      }
+    },
+    {
+      "at_seconds": 70.0,
+      "bot_indices": [
+        1
+      ],
+      "action": "quick_chat",
+      "args": {
+        "text": "Nice shot!",
+        "team_only": false
+      }
+    },
+    {
+      "at_seconds": 80.0,
+      "bot_indices": [
+        2
+      ],
+      "action": "command",
+      "args": {
+        "command": "/list"
+      }
+    },
+    {
+      "at_seconds": 90.0,
+      "bot_indices": [
+        3
+      ],
+      "action": "team_change",
+      "args": {
+        "team": "other"
+      }
+    },
+    {
+      "at_seconds": 110.0,
+      "bot_indices": [
+        1
+      ],
+      "action": "position_change",
+      "args": {
+        "position": "Goalie"
+      }
+    },
+    {
+      "at_seconds": 130.0,
+      "bot_indices": [
+        2
+      ],
+      "action": "position_change",
+      "args": {
+        "position": "LW"
+      }
+    }
+  ],
+  "mod_specific": {
+    "curved_stick": {
+      "heel": 50,
+      "middle": 80,
+      "toe": 60,
+      "tip": 200
+    }
+  }
+}

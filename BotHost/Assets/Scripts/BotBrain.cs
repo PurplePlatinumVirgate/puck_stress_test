@@ -49,6 +49,24 @@ namespace PuckStressTest
         // baseline first.
         public float VoteWarmupAfterSeconds = 30f;
 
+        // Mod-interaction: periodic carving for CompetitiveSkating.
+        // Server-side carve detection = Slide && LateralLeft &&
+        // LateralRight && grounded (FixedUpdate_Patch); the modded
+        // client also zeroes the forward move component. We replicate
+        // that input signature in bursts. Set from the playbook's
+        // behavior.comp_carve by MirrorPlayer when wiring the brain.
+        public bool CompCarve = false;
+        // Playbook behavior toggles. MirrorPlayer sets the real one; the default
+        // instance keeps today's behavior for a null playbook. Only the
+        // IMPLEMENTED behaviors are gated in the output block (skate_to_puck,
+        // rotate_stick_to_puck, rotate_head_to_puck, push_to_opposing_goal) and
+        // the pass decision (pass_to_teammate). attempt_poke / respect_faceoff /
+        // line_change are not modeled by the bot, so toggling them does nothing.
+        public BehaviorToggles Behaviors = new BehaviorToggles();
+        private bool _carving;
+        private int _carveTicksLeft;
+        private int _carveCooldownTicks;
+
         // ML data emitter (M1). Set by MirrorPlayer.OnNetworkSpawn
         // when BotBrain is attached. Receives EmitTick() at the end
         // of every Tick(), capturing (obs, action) pairs for BC
@@ -913,6 +931,11 @@ namespace PuckStressTest
                 if (_slideSent)  { try { Input.SendSlide(false);  } catch { } _slideSent = false; }
                 if (_sprintSent) { try { Input.SendSprint(false); } catch { } _sprintSent = false; }
                 if (_bladeAngleSent != 0) { try { Input.SendBladeAngle(0); } catch { } _bladeAngleSent = 0; }
+                if (_carving)
+                {
+                    try { Input.SendLateralLeft(false); Input.SendLateralRight(false); } catch { }
+                    _carving = false; _carveTicksLeft = 0;
+                }
                 return;
             }
 
@@ -1521,7 +1544,9 @@ namespace PuckStressTest
                 // yaw to whichever target we pick.
                 bool isPass = false;
                 strikeAimTarget = offGoal;
-                if (engageShot)
+                // pass_to_teammate behavior toggle: when off, never pass — always
+                // take the shot at goal.
+                if (engageShot && Behaviors != null && Behaviors.PassToTeammate)
                 {
                     bool laneToGoalClear = IsLaneClear(myPos, offGoal, ignoreNid: Player.NetworkObjectId, blockerRadius: 0.8f);
                     if (!laneToGoalClear)
@@ -1637,6 +1662,45 @@ namespace PuckStressTest
                 _lastStickInputDeg = new Vector2(0f, sweepYaw * 0.5f);
             }
 
+            // Mod-interaction carve bursts (CompetitiveSkating): replicate
+            // the modded client's input signature — Slide + both Laterals
+            // ON and the forward move component zeroed — for ~1.5s every
+            // ~10s of play. Runs on top of whatever the heuristics decided.
+            if (CompCarve)
+            {
+                if (_carving)
+                {
+                    moveY = 0;                      // forward-only zeroed
+                    if (--_carveTicksLeft <= 0)
+                    {
+                        _carving = false;
+                        try { Input.SendLateralLeft(false); Input.SendLateralRight(false); } catch { }
+                        _carveCooldownTicks = Scaled(240) + (BotIndex * 17) % Scaled(120);
+                    }
+                }
+                else if (--_carveCooldownTicks <= 0)
+                {
+                    _carving = true;
+                    _carveTicksLeft = Scaled(45);   // ~1.5s at 30Hz-scaled ticks
+                    try { Input.SendLateralLeft(true); Input.SendLateralRight(true); } catch { }
+                }
+            }
+
+            // Honor the IMPLEMENTED playbook behavior toggles. Defaults are
+            // all-on (= current behavior), so this is a no-op unless a playbook
+            // explicitly turns one off.
+            if (Behaviors != null)
+            {
+                // skate_to_puck off: a skater that shouldn't chase holds position
+                // when it doesn't have the puck (goalies keep their net play).
+                if (!Behaviors.SkateToPuck && !isCarrier && !goalie) { moveX = 0; moveY = 0; }
+                // push_to_opposing_goal off: a carrier stops driving forward.
+                if (!Behaviors.PushToOpposingGoal && isCarrier) { moveY = 0; }
+                // rotate_stick_to_puck / rotate_head_to_puck off: neutral angle.
+                if (!Behaviors.RotateStickToPuck) { stickX = AngleToShort(0f); stickY = AngleToShort(0f); }
+                if (!Behaviors.RotateHeadToPuck)  { lookX  = AngleToShort(0f);  lookY  = AngleToShort(0f); }
+            }
+
             Input.SendMove(moveX, moveY);
             Input.SendRaycastOriginAngle(stickX, stickY);
             Input.SendLookAngle(lookX, lookY);
@@ -1705,6 +1769,10 @@ namespace PuckStressTest
                 _shotState = ShotState.Idle;
                 _shotTicksLeft = 0;
             }
+
+            // Carve overrides the slide policy: the server's carve check is
+            // Slide && LateralLeft && LateralRight && grounded.
+            if (_carving) wantSlide = true;
 
             if (wantSlide != _slideSent)
             {

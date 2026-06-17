@@ -1,0 +1,27 @@
+{
+  "name": "Comp dashfall (CompTweaks)",
+  "description": "Standard play plus CompetitiveAdjustments 'PPKB/Action' named messages (random dive/twistleft/twistright every 4-10s per bot, down+up pair) to exercise the mod's action-processing path. On the baseline phase the unregistered named messages are dropped by NGO - bot inputs stay identical across A/B.",
+  "schema_version": 1,
+  "duration_seconds": 3600.0,
+  "seed": 42,
+  "bot_count": 12,
+  "vote_start": true,
+  "team_assignment": "alternate",
+  "position_distribution": {
+    "skater": 10,
+    "goalie": 2
+  },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": false,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": false,
+    "pass_to_teammate": true,
+    "line_change": false,
+    "comp_dashfall": true
+  },
+  "scripted_actions": [],
+  "mod_specific": {}
+}

@@ -195,8 +195,26 @@ namespace PuckStressTest.Mirror
                         brain.VoteStart = bi?.Config?.VoteStart ?? false;
                         brain.VoteWarmup = bi?.Config?.VoteWarmup ?? false;
                         brain.VoteWarmupAfterSeconds = bi?.Config?.VoteWarmupAfterSeconds ?? 30f;
+                        brain.CompCarve = bi?.Config?.Playbook?.Behavior?.CompCarve ?? false;
+                        brain.Behaviors = bi?.Config?.Playbook?.Behavior ?? new BehaviorToggles();
                         brain.Snapshot = snap;
-                        Debug.Log($"{tag} wired BotBrain + SnapshotLogger b={botIndex} — tick={tickHz} Hz, snapshots → {snap.OutputDirectory}");
+                        Debug.Log($"{tag} wired BotBrain + SnapshotLogger b={botIndex} — tick={tickHz} Hz, carve={brain.CompCarve}, snapshots → {snap.OutputDirectory}");
+                    }
+
+                    // Mod-specific interactions (PPKB dashfall actions,
+                    // curved-stick config) — only attach when the playbook
+                    // asks for at least one of them. Independent of which
+                    // brain drives movement.
+                    var pb = bi?.Config?.Playbook;
+                    bool dashfall = pb?.Behavior?.CompDashfall ?? false;
+                    Newtonsoft.Json.Linq.JObject curve = null;
+                    pb?.ModSpecific?.TryGetValue("curved_stick", out curve);
+                    if (dashfall || curve != null)
+                    {
+                        var mi = gameObject.AddComponent<ModInteractions>();
+                        mi.Init(NetworkManager, botIndex, dashfall, curve,
+                                bi?.Config?.Seed ?? 1);
+                        Debug.Log($"{tag} wired ModInteractions b={botIndex} dashfall={dashfall} curve={(curve != null)}");
                     }
                 }
                 else
@@ -207,6 +225,14 @@ namespace PuckStressTest.Mirror
                 // Kick off the state-machine driver. B323 server starts
                 // each player in phase=None; we have to explicitly
                 // request the TeamSelect transition.
+                // Resolve our playbook-assigned team + role once (global bot
+                // index + playbook drive both — see DesiredTeam/DesiredGoalie).
+                var biState = NetworkManager?.gameObject?.GetComponent<BotInstance>();
+                int myBotIndex = biState?.Index ?? 0;
+                var myPlaybook = biState?.Config?.Playbook;
+                PlayerTeam myTeam = DesiredTeam(myBotIndex, myPlaybook);
+                bool myWantGoalie = DesiredGoalie(myBotIndex, myPlaybook);
+
                 System.Action<PlayerState> handleState = (newPhase) =>
                 {
                     if (newPhase == PlayerState.None)
@@ -216,16 +242,16 @@ namespace PuckStressTest.Mirror
                     }
                     else if (newPhase == PlayerState.TeamSelect)
                     {
-                        var team = (OwnerClientId % 2 == 0) ? PlayerTeam.Red : PlayerTeam.Blue;
-                        Debug.Log($"{tag} requesting team={team}");
-                        SendRequestTeam(team);
+                        Debug.Log($"{tag} requesting team={myTeam} (bot {myBotIndex}, "
+                                  + $"role={(myWantGoalie ? "Goalie" : "Skater")})");
+                        SendRequestTeam(myTeam);
                         Debug.Log($"{tag} requesting PositionSelect");
                         SendRequestPositionSelect();
                     }
                     else if (newPhase == PlayerState.PositionSelect)
                     {
                         if (_claimPositionCo == null)
-                            _claimPositionCo = StartCoroutine(ClaimPositionLoop(tag));
+                            _claimPositionCo = StartCoroutine(ClaimPositionLoop(tag, myWantGoalie));
                     }
                     else if (_claimPositionCo != null)
                     {
@@ -283,18 +309,64 @@ namespace PuckStressTest.Mirror
         // The loop never bails permanently — a seatless bot keeps trying
         // (rate-limited) for as long as it stays in PositionSelect; the
         // handleState watcher cancels us once the server promotes us.
-        private System.Collections.IEnumerator ClaimPositionLoop(string tag)
+        // ---- playbook-driven team + role assignment -------------------------
+        // position_distribution / team_assignment are declarative: a bot's
+        // GLOBAL index + the playbook decide its team and whether it plays
+        // goalie, so "10 skaters + 2 goalies, alternate teams" deterministically
+        // yields one goalie per team. (Before B897 these fields were ignored:
+        // team was OwnerClientId%2 and seats were claimed first-come.)
+        internal static PlayerTeam DesiredTeam(int botIndex, Playbook pb)
+        {
+            switch ((pb?.TeamAssignment ?? "alternate").Trim().ToLowerInvariant())
+            {
+                case "all_red":  return PlayerTeam.Red;
+                case "all_blue": return PlayerTeam.Blue;
+                default:         return (botIndex % 2 == 0) ? PlayerTeam.Red : PlayerTeam.Blue;
+            }
+        }
+
+        // A goalie is the lowest-index bot on its team, and goalies are handed to
+        // teams in first-appearance order up to position_distribution.goalie (a
+        // team has exactly one goalie seat, so a 2nd goalie on the same team is
+        // impossible and that bot stays a skater via the claim-loop fallback).
+        internal static bool DesiredGoalie(int botIndex, Playbook pb)
+        {
+            int goalies = pb?.PositionDistribution?.Goalie ?? 0;
+            if (goalies <= 0) return false;
+            PlayerTeam myTeam = DesiredTeam(botIndex, pb);
+            var earlierTeams = new System.Collections.Generic.HashSet<PlayerTeam>();
+            for (int i = 0; i < botIndex; i++)
+            {
+                PlayerTeam t = DesiredTeam(i, pb);
+                if (t == myTeam) return false;   // an earlier bot is my team's goalie candidate
+                earlierTeams.Add(t);
+            }
+            return earlierTeams.Count < goalies;  // my team's appearance-rank gets a goalie?
+        }
+
+        private static bool SeatIsGoalie(string posName)
+            => !string.IsNullOrEmpty(posName)
+               && posName.StartsWith("G ", System.StringComparison.Ordinal);
+
+        private System.Collections.IEnumerator ClaimPositionLoop(string tag, bool wantGoalie)
         {
             try
             {
                 yield return new WaitForSeconds(0.1f);
 
                 var positions = FindAllSpawnedNB<MirrorPlayerPosition>();
-                Debug.Log($"{tag} ClaimPositionLoop: {positions.Count} PlayerPosition objects visible");
+                Debug.Log($"{tag} ClaimPositionLoop: {positions.Count} PlayerPosition objects visible "
+                          + $"(want {(wantGoalie ? "Goalie" : "Skater")} seat)");
 
                 int attempts = 0;
                 int idx = 0;
                 bool announcedSeated = false;
+                // Honor the playbook's position_distribution: claim a seat that
+                // matches our assigned role. If no matching seat is free after a
+                // grace window (e.g. our goalie seat was taken), fall back to any
+                // free seat so the bot always spawns rather than spinning.
+                float claimStart = Time.realtimeSinceStartup;
+                bool roleFallback = false;
                 while (State != PlayerState.Play)
                 {
                     if (positions.Count == 0)
@@ -321,9 +393,18 @@ namespace PuckStressTest.Mirror
                     }
                     announcedSeated = false;  // lost the seat somehow — resume claiming
 
+                    if (!roleFallback && Time.realtimeSinceStartup - claimStart > 4f)
+                    {
+                        roleFallback = true;
+                        Debug.Log($"{tag} no free {(wantGoalie ? "Goalie" : "Skater")} seat after 4s — accepting any free seat");
+                    }
+
                     var pp = positions[idx % positions.Count];
                     idx++;
                     if (pp == null || pp.IsClaimed) { yield return null; continue; }
+                    // Skip seats that don't match our assigned role until the
+                    // fallback window opens.
+                    if (!roleFallback && SeatIsGoalie(pp.PositionName) != wantGoalie) { yield return null; continue; }
                     attempts++;
                     var posRef = new NetworkObjectReference(pp.NetworkObject);
                     if (attempts <= 30 || attempts % 10 == 0)
@@ -422,6 +503,11 @@ namespace PuckStressTest.Mirror
         private const uint Id_Client_ExtendRightInputRpc        = 4044541524u;  // (bool); Reliable
         private const uint Id_Client_DashLeftInputRpc           = 1929006103u;  // (); Reliable
         private const uint Id_Client_DashRightInputRpc          = 3135613427u;  // (); Reliable
+        // B897 PlayerInput.cs registration lines 1408/1410 — lateral inputs
+        // are what CompetitiveSkating's server-side carve detection reads
+        // (Slide + LateralLeft + LateralRight + grounded = carving).
+        private const uint Id_Client_LateralLeftInputRpc        = 867760499u;   // (bool); Reliable
+        private const uint Id_Client_LateralRightInputRpc       = 2139362476u;  // (bool); Reliable
 
         // NGO marks __beginSendRpc / __endSendRpc as `internal` in C#
         // source. At post-build IL time, RuntimeAccessModifiersILPP
@@ -504,6 +590,8 @@ namespace PuckStressTest.Mirror
         }
 
         public void SendSlide(bool value)        { _last.Slide = value;        SendBoolRpc(Id_Client_SlideInputRpc,        value, RpcDelivery.Reliable); }
+        public void SendLateralLeft(bool value)  {                             SendBoolRpc(Id_Client_LateralLeftInputRpc,  value, RpcDelivery.Reliable); }
+        public void SendLateralRight(bool value) {                             SendBoolRpc(Id_Client_LateralRightInputRpc, value, RpcDelivery.Reliable); }
         public void SendSprint(bool value)       { _last.Sprint = value;       SendBoolRpc(Id_Client_SprintInputRpc,       value, RpcDelivery.Reliable); }
         public void SendStop(bool value)         { _last.Stop = value;         SendBoolRpc(Id_Client_StopInputRpc,         value, RpcDelivery.Reliable); }
         public void SendExtendLeft(bool value)   { _last.ExtendLeft = value;   SendBoolRpc(Id_Client_ExtendLeftInputRpc,   value, RpcDelivery.Reliable); }

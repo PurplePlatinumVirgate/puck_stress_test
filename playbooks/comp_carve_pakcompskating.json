@@ -1,10 +1,11 @@
 {
-  "name": "Vanilla long (12 bots, 8 hour run)",
-  "description": "Long-running variant of vanilla_baseline for ad-hoc remote-server soak runs. 8-hour duration; kill earlier via 'taskkill /IM BotHost.exe /F'.",
+  "name": "Comp carve (PakCompSkating)",
+  "description": "Standard play plus periodic carve bursts (Slide + LateralLeft + LateralRight + forward-zeroed move, ~1.5s every ~8-12s per bot) to exercise CompetitiveSkating's carve physics path. Inputs are vanilla-standard, so the baseline phase sees identical bot behavior.",
   "schema_version": 1,
-  "duration_seconds": 28800,
+  "duration_seconds": 3600.0,
   "seed": 42,
   "bot_count": 12,
+  "vote_start": true,
   "team_assignment": "alternate",
   "position_distribution": {
     "skater": 10,
@@ -18,7 +19,8 @@
     "push_to_opposing_goal": true,
     "respect_faceoff": false,
     "pass_to_teammate": true,
-    "line_change": false
+    "line_change": false,
+    "comp_carve": true
   },
   "scripted_actions": [],
   "mod_specific": {}

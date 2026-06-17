@@ -1,0 +1,36 @@
+{
+  "name": "HarambOT trigger (12 bots, !gorilla)",
+  "description": "Vanilla-style play, but bot 0 sends the admin chat command '!gorilla' at 30s to spawn Harambe, who then charges and launches skaters (server-side physics) for the rest of the game. Requires the job to grant bot 0's SteamId (botsteam004200, from seed 42) admin via the admin_steam_ids config field. Note: !gorilla is a toggle and Harambe auto-exits at game-end, so one trigger covers the first game of the phase. Run length is set per-job by phase_seconds.",
+  "schema_version": 1,
+  "duration_seconds": 300,
+  "seed": 42,
+  "bot_count": 12,
+  "team_assignment": "alternate",
+  "position_distribution": {
+    "skater": 10,
+    "goalie": 2
+  },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": false,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": false,
+    "pass_to_teammate": true,
+    "line_change": false
+  },
+  "scripted_actions": [
+    {
+      "at_seconds": 30,
+      "bot_indices": [
+        0
+      ],
+      "action": "chat",
+      "args": {
+        "text": "!gorilla"
+      }
+    }
+  ],
+  "mod_specific": {}
+}

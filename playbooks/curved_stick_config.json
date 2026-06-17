@@ -1,0 +1,33 @@
+{
+  "name": "Curved stick (oomtm450)",
+  "description": "Standard play; each bot announces a curved-stick config ('oomtm450_curvedstick_client' named message, heel;middle;toe;tip) 5s after connect so the mod's per-20th-PhysicsManager-frame curve-application path actually runs. Baseline phase drops the unregistered message - inputs identical across A/B.",
+  "schema_version": 1,
+  "duration_seconds": 3600.0,
+  "seed": 42,
+  "bot_count": 12,
+  "vote_start": true,
+  "team_assignment": "alternate",
+  "position_distribution": {
+    "skater": 10,
+    "goalie": 2
+  },
+  "behavior": {
+    "skate_to_puck": true,
+    "rotate_stick_to_puck": true,
+    "rotate_head_to_puck": true,
+    "attempt_poke": false,
+    "push_to_opposing_goal": true,
+    "respect_faceoff": false,
+    "pass_to_teammate": true,
+    "line_change": false
+  },
+  "scripted_actions": [],
+  "mod_specific": {
+    "curved_stick": {
+      "heel": 50,
+      "middle": 80,
+      "toe": 60,
+      "tip": 200
+    }
+  }
+}
